@@ -1,0 +1,205 @@
+5.BerkeleyClient.java
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class BerkeleyClient {
+
+    public static void main(String[] args) {
+        try {
+            Socket socket = new Socket("127.0.0.1", 8080);
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+
+            Random rand = new Random();
+            float localClock = rand.nextInt(10);
+
+            System.out.println("Client started");
+            System.out.println("Local Clock: " + localClock);
+
+            // Receive request
+            String msg = in.readLine();
+            System.out.println("Server: " + msg);
+
+            if (msg != null && msg.contains("local clock")) {
+                String response = "Hello from client, my local clock value is " + localClock;
+                out.println(response);
+            }
+
+            // Receive adjustment
+            String adjustment = in.readLine();
+            System.out.println("Server: " + adjustment);
+
+            if (adjustment != null && adjustment.contains("offset")) {
+                String[] parts = adjustment.split(" ");
+                String op = parts[parts.length - 2];
+                float val = Float.parseFloat(parts[parts.length - 1]);
+
+                if (op.equals("add")) {
+                    localClock += val;
+                } else {
+                    localClock -= val;
+                }
+
+                System.out.println("Updated Client Clock: " + localClock);
+            }
+
+            socket.close();
+
+        } catch (Exception e) {
+            System.out.println("Connection lost!");
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BerkeleyServer.java
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+class ClientHandler extends Thread {
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
+    private float clientClock;
+
+    public ClientHandler(Socket socket) {
+        this.socket = socket;
+        try {
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+        } catch (Exception e) {
+            System.out.println("Error initializing client handler");
+        }
+    }
+
+    public void run() {
+        try {
+            out.println("Hello from server, please tell me your local clock value.");
+            String response = in.readLine();
+
+            if (response != null) {
+                String[] parts = response.split(" ");
+                clientClock = Float.parseFloat(parts[parts.length - 1]);
+                System.out.println("Received clock: " + clientClock);
+            }
+
+        } catch (Exception e) {
+            System.out.println("Client disconnected!");
+        }
+    }
+
+    public float getClientClock() {
+        return clientClock;
+    }
+
+    public void sendAdjustment(float avg) {
+        try {
+            float offset = clientClock - avg;
+            String op = (offset >= 0) ? "minus" : "add";
+            offset = Math.abs(offset);
+
+            String msg = "From server, your clock adjustment offset is " + op + " " + offset;
+            out.println(msg);
+        } catch (Exception e) {
+            System.out.println("Error sending adjustment");
+        }
+    }
+}
+
+public class BerkeleyServer {
+
+    public static void main(String[] args) {
+        try {
+            ServerSocket serverSocket = new ServerSocket(8080);
+            System.out.println("Server started...");
+
+            List<ClientHandler> clients = new ArrayList<>();
+            Scanner sc = new Scanner(System.in);
+
+            // Accept clients
+            while (true) {
+                Socket socket = serverSocket.accept();
+                ClientHandler client = new ClientHandler(socket);
+                client.start();
+                clients.add(client);
+
+                System.out.print("Add more clients? (1-Yes / 0-No): ");
+                int choice = sc.nextInt();
+                if (choice == 0) break;
+            }
+
+            // Wait for all threads
+            for (ClientHandler c : clients) {
+                c.join();
+            }
+
+            // Server clock
+            Random rand = new Random();
+            float serverClock = rand.nextInt(10);
+            System.out.println("Server Clock: " + serverClock);
+
+            // Calculate average
+            float sum = serverClock;
+            for (ClientHandler c : clients) {
+                sum += c.getClientClock();
+            }
+
+            float avg = sum / (clients.size() + 1);
+            System.out.println("Average Clock: " + avg);
+
+            // Send adjustment
+            for (ClientHandler c : clients) {
+                c.sendAdjustment(avg);
+            }
+
+            // Update server clock
+            serverClock = avg;
+            System.out.println("Updated Server Clock: " + serverClock);
+
+            serverSocket.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Output
